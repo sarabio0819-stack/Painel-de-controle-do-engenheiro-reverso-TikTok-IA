@@ -10,55 +10,71 @@ export default async function handler(req, res) {
   }
 
   try {
-    const tiktokRes = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(videoUrl)}`);
-    const videoData = tiktokRes.ok ? await tiktokRes.json() : {};
+    // Busca dados reais através da API pública do TikWM (suporta vídeos MP4 e carrosséis de imagens)
+    const tikwmRes = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(videoUrl)}`);
+    const tikwmData = await tikwmRes.json();
 
-    const title = videoData.title || "Uma história envolvente e dramática entre personagens em um cenário fantástico e misterioso.";
-    const author = videoData.author_name ? `@${videoData.author_name}` : '@criador.ia';
-    const mainThumbnail = videoData.thumbnail_url || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80';
+    if (!tikwmData || tikwmData.code !== 0) {
+      return res.status(400).json({ error: 'Não foi possível extrair os dados desse vídeo. Verifique se o link é público.' });
+    }
 
-    // Banco de imagens verticais (9:16) para simulação do Storyboard Completo
-    const frameLibrary = [
-      mainThumbnail,
-      'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=800&q=120',
-      'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=120',
-      'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=800&q=120',
-      'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?auto=format&fit=crop&w=800&q=120',
-      'https://images.unsplash.com/photo-1614741118887-7a4ee193a5fa?auto=format&fit=crop&w=800&q=120',
-      'https://images.unsplash.com/photo-1633167606207-d840b5070fc2?auto=format&fit=crop&w=800&q=120',
-      'https://images.unsplash.com/photo-1618172193763-c511deb635ca?auto=format&fit=crop&w=800&q=120'
-    ];
+    const data = tikwmData.data;
+    const title = data.title || "Vídeo sem legenda";
+    const author = data.author?.nickname ? `@${data.author.unique_id}` : '@criador';
+    const videoPlayUrl = data.play; // Link do MP4 real sem marca d'água
 
-    // Gerador de Cenas Profissionais (Simula Direção de Arte de 15 Cenas)
-    const totalScenes = 15;
+    // Se o post for um carrossel de fotos no TikTok, pega TODAS as fotos reais!
+    let realImages = [];
+    if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+      realImages = data.images;
+    } else {
+      // Se for um vídeo MP4 único, pega a capa principal e a capa de origem em HD
+      if (data.cover) realImages.push(data.cover);
+      if (data.origin_cover && data.origin_cover !== data.cover) realImages.push(data.origin_cover);
+      if (data.dynamic_cover) realImages.push(data.dynamic_cover);
+    }
+
+    // Quebra o texto da legenda em frases para mapear o áudio/fala de cada cena
+    const sentences = title.split(/(?<=[.!?])\s+|\n+/).filter(s => s.trim().length > 0);
+    const totalScenes = Math.max(sentences.length, realImages.length, 6);
+
     const storyboard = [];
 
-    for (let i = 1; i <= totalScenes; i++) {
-      const minutes = Math.floor(((i - 1) * 4) / 60);
-      const seconds = (((i - 1) * 4) % 60).toString().padStart(2, '0');
+    for (let i = 0; i < totalScenes; i++) {
+      const sceneNum = i + 1;
+      const minutes = Math.floor((i * 4) / 60);
+      const seconds = ((i * 4) % 60).toString().padStart(2, '0');
       const timestamp = `00:${minutes.toString().padStart(2, '0')}:${seconds}`;
 
+      // Usa a foto real extraída se existir, senão reutiliza a capa real HD
+      const currentImage = realImages[i] || realImages[i % realImages.length] || data.cover;
+
+      const sentenceText = sentences[i] || sentences[i % sentences.length] || title;
+
       storyboard.push({
-        sceneNumber: i,
+        sceneNumber: sceneNum,
         timestamp,
-        image: frameLibrary[(i - 1) % frameLibrary.length],
-        visualAction: `Cena ${i}: Plano médio e enquadramento vertical. Destaque para a iluminação dramática, reações faciais e atmosfera da cena.`,
-        audioDialogue: `Trecho ${i}: "...fala e narrativa correspondente à cena ${i} para guiar a dublagem..."`,
-        promptIA: `Hyper-realistic 8k vertical keyframe, scene ${i}, dramatic lighting, cinematic atmosphere, 9:16 aspect ratio --v 6.0`,
-        cameraAngle: i % 2 === 0 ? "Plano Fechado / Close-up" : "Plano Médio / Ângulo Geral",
+        image: currentImage,
+        visualAction: `Cena ${sceneNum}: Ação visual correspondente ao frame do vídeo real.`,
+        audioDialogue: sentenceText,
+        promptIA: `Cinematic 8k vertical keyframe, scene ${sceneNum}: ${sentenceText} --ar 9:16 --v 6.0`,
+        cameraAngle: sceneNum % 2 === 0 ? "Plano Fechado / Close-up" : "Plano Médio / Ângulo Geral",
       });
     }
 
     return res.status(200).json({
-      title: videoData.title || "Análise de Produção de Vídeo IA",
+      title,
       author,
-      duration: `${totalScenes * 4} segundos (${totalScenes} Cenas / Mapeamento Completo)`,
+      duration: `${data.duration || totalScenes * 4} segundos`,
       transcription: title,
-      contextSummary: "Análise completa do fluxo narrativo, ritmo de cortes, ganchos visuais e estrutura de cenas para recriação e adaptação com novos personagens ou temas.",
+      contextSummary: `Mapeamento concluído com sucesso! Encontradas ${realImages.length} imagens/frames reais no post original.`,
+      videoPlayUrl,
+      isSlideshow: data.images ? true : false,
       storyboard
     });
 
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao processar a estrutura do vídeo.' });
+    console.error('Erro no processamento TikWM:', error);
+    return res.status(500).json({ error: 'Erro ao conectar à API de extração de vídeo.' });
   }
 }
