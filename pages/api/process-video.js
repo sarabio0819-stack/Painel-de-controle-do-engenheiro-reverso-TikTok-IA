@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Busca dados reais através da API pública do TikWM (suporta vídeos MP4 e carrosséis de imagens)
+    // API pública para extração dos dados reais e link direto do MP4
     const tikwmRes = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(videoUrl)}`);
     const tikwmData = await tikwmRes.json();
 
@@ -21,43 +21,47 @@ export default async function handler(req, res) {
     const data = tikwmData.data;
     const title = data.title || "Vídeo sem legenda";
     const author = data.author?.nickname ? `@${data.author.unique_id}` : '@criador';
-    const videoPlayUrl = data.play; // Link do MP4 real sem marca d'água
+    const videoPlayUrl = data.play; // Link direto do MP4 HD sem marca d'água
+    const durationSec = data.duration || 30;
 
-    // Se o post for um carrossel de fotos no TikTok, pega TODAS as fotos reais!
+    // Se for carrossel de imagens, pega todas as fotos reais
     let realImages = [];
     if (data.images && Array.isArray(data.images) && data.images.length > 0) {
       realImages = data.images;
     } else {
-      // Se for um vídeo MP4 único, pega a capa principal e a capa de origem em HD
+      // Se for vídeo MP4, recolhe as capas disponíveis
       if (data.cover) realImages.push(data.cover);
-      if (data.origin_cover && data.origin_cover !== data.cover) realImages.push(data.origin_cover);
+      if (data.origin_cover) realImages.push(data.origin_cover);
       if (data.dynamic_cover) realImages.push(data.dynamic_cover);
     }
 
-    // Quebra o texto da legenda em frases para mapear o áudio/fala de cada cena
+    // Quebra a legenda por frases para associar a cada cena
     const sentences = title.split(/(?<=[.!?])\s+|\n+/).filter(s => s.trim().length > 0);
-    const totalScenes = Math.max(sentences.length, realImages.length, 6);
+    const totalScenes = realImages.length > 1 ? realImages.length : 12;
+    const interval = durationSec / totalScenes;
 
     const storyboard = [];
 
     for (let i = 0; i < totalScenes; i++) {
       const sceneNum = i + 1;
-      const minutes = Math.floor((i * 4) / 60);
-      const seconds = ((i * 4) % 60).toString().padStart(2, '0');
+      const currentSec = Math.floor(i * interval);
+      const minutes = Math.floor(currentSec / 60);
+      const seconds = (currentSec % 60).toString().padStart(2, '0');
       const timestamp = `00:${minutes.toString().padStart(2, '0')}:${seconds}`;
 
-      // Usa a foto real extraída se existir, senão reutiliza a capa real HD
-      const currentImage = realImages[i] || realImages[i % realImages.length] || data.cover;
-
       const sentenceText = sentences[i] || sentences[i % sentences.length] || title;
+      
+      // Utiliza imagem da galeria se existir
+      const currentImage = realImages[i] || data.cover;
 
       storyboard.push({
         sceneNumber: sceneNum,
         timestamp,
+        timeInSeconds: currentSec,
         image: currentImage,
-        visualAction: `Cena ${sceneNum}: Ação visual correspondente ao frame do vídeo real.`,
+        visualAction: `Cena ${sceneNum} (${timestamp}): Ação visual dramática correspondente a este momento do vídeo.`,
         audioDialogue: sentenceText,
-        promptIA: `Cinematic 8k vertical keyframe, scene ${sceneNum}: ${sentenceText} --ar 9:16 --v 6.0`,
+        promptIA: `Cinematic 8k keyframe, scene ${sceneNum}: ${sentenceText} --ar 9:16 --v 6.0`,
         cameraAngle: sceneNum % 2 === 0 ? "Plano Fechado / Close-up" : "Plano Médio / Ângulo Geral",
       });
     }
@@ -65,16 +69,15 @@ export default async function handler(req, res) {
     return res.status(200).json({
       title,
       author,
-      duration: `${data.duration || totalScenes * 4} segundos`,
+      duration: `${durationSec} segundos (${totalScenes} Cenas Mapeadas)`,
       transcription: title,
-      contextSummary: `Mapeamento concluído com sucesso! Encontradas ${realImages.length} imagens/frames reais no post original.`,
+      contextSummary: `Mapeamento da estrutura narrativa e tempos de corte para o vídeo de ${author}.`,
       videoPlayUrl,
       isSlideshow: data.images ? true : false,
       storyboard
     });
 
   } catch (error) {
-    console.error('Erro no processamento TikWM:', error);
     return res.status(500).json({ error: 'Erro ao conectar à API de extração de vídeo.' });
   }
 }
