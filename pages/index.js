@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Head from 'next/head';
 
 export default function Home() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
+  const videoRef = useRef(null);
 
   const handleAnalyze = async (e) => {
     e.preventDefault();
@@ -30,13 +31,19 @@ export default function Home() {
     }
   };
 
+  const jumpToTime = (seconds) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = seconds;
+      videoRef.current.play();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased pb-20">
       <Head>
         <title>Diretor & Produtor de Vídeos IA - Storyboard</title>
       </Head>
 
-      {/* Topo / Header */}
       <header className="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -79,61 +86,86 @@ export default function Home() {
           </form>
         </section>
 
-        {/* Dashboard do Diretor */}
         {data && (
           <div className="space-y-8">
             
-            {/* Painel de Contexto do Vídeo */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-4 gap-2">
-                <div>
-                  <h2 className="text-lg font-bold text-indigo-400">Dados Gerais & Contexto da Produção</h2>
-                  <p className="text-xs text-slate-400">Criador original: {data.author} | Duração: {data.duration}</p>
-                </div>
-                <span className="text-xs px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
-                  {data.storyboard.length} Cenas Geradas
+            {/* Painel com Vídeo de Referência e Contexto */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              {/* Player do Vídeo Original */}
+              <div className="md:col-span-1 flex flex-col items-center justify-center bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <span className="text-xs font-bold text-indigo-400 mb-2 block w-full text-left">
+                  Vídeo Original (Player de Referência):
                 </span>
+                {data.videoPlayUrl ? (
+                  <video
+                    ref={videoRef}
+                    src={data.videoPlayUrl}
+                    controls
+                    className="w-full max-h-[350px] rounded-lg object-contain bg-black"
+                  />
+                ) : (
+                  <div className="text-xs text-slate-500 p-8">Vídeo indisponível para reprodução direta.</div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1">
-                  <span className="text-indigo-400 font-semibold block uppercase">Resumo / Contexto Narrativo:</span>
-                  <p className="text-slate-300 leading-relaxed">{data.contextSummary}</p>
-                </div>
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1">
-                  <span className="text-indigo-400 font-semibold block uppercase">Transcrição / Legenda Original:</span>
-                  <p className="text-slate-300 italic leading-relaxed">"{data.transcription}"</p>
+              {/* Informações Gerais */}
+              <div className="md:col-span-2 space-y-4 flex flex-col justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-1">{data.title}</h2>
+                  <p className="text-xs text-slate-400 mb-4">Criador: {data.author} | Duração: {data.duration}</p>
+
+                  <div className="space-y-3 text-xs">
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                      <span className="text-indigo-400 font-semibold block uppercase">Resumo da Análise:</span>
+                      <p className="text-slate-300 mt-1">{data.contextSummary}</p>
+                    </div>
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                      <span className="text-indigo-400 font-semibold block uppercase">Transcrição / Áudio:</span>
+                      <p className="text-slate-300 italic mt-1">"{data.transcription}"</p>
+                    </div>
+                  </div>
                 </div>
               </div>
+
             </div>
 
-            {/* Titulo da Grade estilo Codex */}
+            {/* Cabeçalho da Grade */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <span>🎥 Storyboard de Produção</span>
-                <span className="text-xs font-normal text-slate-400">({data.storyboard.length} quadros no formato 9:16)</span>
+                <span className="text-xs font-normal text-slate-400">({data.storyboard.length} Cenas Mapeadas)</span>
               </h3>
             </div>
 
-            {/* Grade Contínua de Quadros (5 colunas no desktop) */}
+            {/* Grade de Cenas 9:16 com Salto de Tempo */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {data.storyboard.map((scene) => (
                 <div key={scene.sceneNumber} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col hover:border-indigo-500/50 transition shadow-lg">
                   
-                  {/* Frame Vertical 9:16 */}
-                  <div className="relative aspect-[9/16] bg-slate-950">
-                    <img src={scene.image} alt={`Cena ${scene.sceneNumber}`} className="w-full h-full object-cover" />
+                  {/* Visual 9:16 */}
+                  <div 
+                    onClick={() => jumpToTime(scene.timeInSeconds)}
+                    className="relative aspect-[9/16] bg-slate-950 cursor-pointer group overflow-hidden"
+                    title="Clique para ir para esta cena no vídeo"
+                  >
+                    <img src={scene.image} alt={`Cena ${scene.sceneNumber}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
                     
-                    {/* Indicadores no topo */}
                     <div className="absolute top-2 left-2 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-mono border border-slate-800 text-slate-300">
                       Cena {scene.sceneNumber}
                     </div>
-                    <div className="absolute top-2 right-2 bg-indigo-600/90 text-white text-[9px] font-mono px-1.5 py-0.5 rounded">
+                    <div className="absolute top-2 right-2 bg-indigo-600 text-white text-[9px] font-mono px-1.5 py-0.5 rounded shadow">
                       {scene.timestamp}
+                    </div>
+
+                    <div className="absolute inset-0 bg-indigo-900/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                      <span className="bg-slate-950/90 text-white text-[10px] px-2 py-1 rounded-full border border-indigo-500 font-bold">
+                        ▶ Ir para Cena
+                      </span>
                     </div>
                   </div>
 
-                  {/* Detalhes da Cena e Ação */}
+                  {/* Informações da Cena */}
                   <div className="p-3 space-y-2 flex-1 flex flex-col justify-between text-[11px]">
                     <div className="space-y-1.5">
                       <span className="text-indigo-400 font-bold block">{scene.cameraAngle}</span>
